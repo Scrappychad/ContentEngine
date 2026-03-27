@@ -44,7 +44,7 @@ function Spinner() {
 function ModeToggle({ mode, onChange }) {
   return (
     <div style={{ display: "inline-flex", background: G.surface2, border: `1px solid ${G.border}`, borderRadius: 50, padding: 4, gap: 4 }}>
-      {[{ id: "quick", label: "Quick Content" }, { id: "pack", label: "Content Pack" }].map(m => (
+      {[{ id: "quick", label: "Quick Content" }, { id: "pack", label: "Content Pack" }, { id: "contest", label: "Thread Contest" }].map(m => (
         <button key={m.id} onClick={() => onChange(m.id)} style={{
           padding: "8px 20px", borderRadius: 50, border: "none",
           background: mode === m.id ? G.accent : "transparent",
@@ -405,6 +405,101 @@ function PackOutput({ pack, form, onReset }) {
   );
 }
 
+// ── CONTEST MODE ─────────────────────────────────────────────────────────────
+
+const CONTEST_SECTIONS = [
+  { key: "HOOKS",     label: "3 Alternate Hooks",      icon: "◎", color: "#f97316" },
+  { key: "THREAD",    label: "Contest Thread",          icon: "◈", color: "#38bdf8" },
+  { key: "BREAKDOWN", label: "Why It Works",            icon: "▲", color: "#22c55e" },
+];
+
+function buildContestPrompt(form) {
+  const angle = form.angle ? "SPECIFIC ANGLE: " + form.angle : "";
+  const ctx = form.context ? "RESEARCH / CONTEXT: " + form.context : "";
+  return "You are a master storyteller and viral thread writer. Your job is to write a thread contest entry that wins.\n\nCONTEST THREAD RULES:\n- 8-12 tweets total. Every tweet must earn its place.\n- Opens with a scene or story - drop the reader into a specific moment, not a generic statement.\n- Has a plot twist or unexpected turn somewhere in the middle - the reader should not see it coming.\n- Feels like a conversation, not a lecture. Write like you are talking to one person.\n- Humor is woven naturally throughout - not forced jokes, but the kind of wit that makes someone smile mid-read.\n- Ends with a big insight or takeaway that reframes everything that came before it.\n- Each tweet under 280 characters. Format as [1/n], [2/n] etc.\n- No bullet points inside tweets. Flowing prose only.\n- No hashtags. No Thread: openers. Start with the story.\n- Never use em dashes. Commas, colons, or new sentences only.\n\nVOICE: Conversational but sharp. Teaches through reframing. Everyday logic, no jargon. The kind of thread people screenshot and save.\n\nTOPIC: " + form.topic + "\n" + angle + "\n" + ctx + "\n\nCRITICAL: Begin with ===CONTEST_START=== and end with ===CONTEST_END===. Nothing before or after.\n\n===CONTEST_START===\n\n##HOOKS##\nWrite 3 alternate opening tweets for this thread. Each is a completely different angle - different tone, different entry point, different emotional trigger. Number them 1, 2, 3.\n\n##THREAD##\nWrite the full contest thread (8-12 tweets). Opens with a scene. Has a twist. Ends with the big insight. Formatted as [1/n].\n\n##BREAKDOWN##\nIn 3-5 short punchy sentences, explain why this thread is built to win. What structural choice creates the hook? Where does the twist land? What makes the ending land?\n\n===CONTEST_END===";
+}
+
+function parseContestContent(raw) {
+  const s = raw.search(/={3}CONTEST_START={3}/);
+  const e = raw.search(/={3}CONTEST_END={3}/);
+  const body = (s !== -1 && e !== -1) ? raw.slice(s + 16, e).trim() : raw;
+  const result = {};
+  CONTEST_SECTIONS.forEach((sec, i) => {
+    const tag = "##" + sec.key + "##";
+    const nextSec = CONTEST_SECTIONS[i + 1];
+    const nextTag = nextSec ? "##" + nextSec.key + "##" : null;
+    const from = body.indexOf(tag);
+    if (from === -1) return;
+    const start = from + tag.length;
+    const end = nextTag ? body.indexOf(nextTag) : body.length;
+    result[sec.key] = body.slice(start, end === -1 ? undefined : end).trim();
+  });
+  return Object.keys(result).length > 1 ? result : null;
+}
+
+function ContestSection({ section, content, isActive, onClick }) {
+  return (
+    <div onClick={onClick} style={{ background: G.surface, border: "1px solid " + (isActive ? section.color + "55" : G.border), borderRadius: G.radius, overflow: "hidden", cursor: "pointer", transition: "border-color 0.2s", animation: "fadeUp 0.3s ease both" }}>
+      <div style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ color: section.color }}>{section.icon}</span>
+          <span style={{ fontWeight: 700, fontSize: "0.88rem", color: isActive ? section.color : G.text }}>{section.label}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <CopyBtn text={content} small />
+          <span style={{ color: G.muted, fontSize: "0.75rem", display: "inline-block", transition: "transform 0.2s", transform: isActive ? "rotate(180deg)" : "rotate(0)" }}>▾</span>
+        </div>
+      </div>
+      {isActive && (
+        <div style={{ borderTop: "1px solid " + G.border, padding: "20px 20px 24px", animation: "fadeIn 0.2s ease" }}>
+          <div style={{ fontFamily: "Lora, Georgia, serif", fontSize: "0.93rem", lineHeight: 1.9, color: "#d0d0e8", whiteSpace: "pre-wrap" }}>
+            {content}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContestOutput({ result, form, onReset }) {
+  const [active, setActive] = useState("HOOKS");
+  const toggle = key => setActive(active === key ? null : key);
+
+  const copyAll = () => {
+    const text = CONTEST_SECTIONS.filter(s => result[s.key]).map(s => s.label.toUpperCase() + "\n" + "=".repeat(40) + "\n" + result[s.key]).join("\n\n");
+    navigator.clipboard.writeText(text);
+  };
+
+  const exportPDF = () => {
+    const sections = CONTEST_SECTIONS.filter(s => result[s.key]).map(s =>
+      '<div class="section"><div class="section-label" style="background:' + s.color + '">' + s.label + '</div><div class="body">' + result[s.key].replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</div></div>'
+    ).join("");
+    printPDF(sections, form, "Thread Contest Entry", "Topic: <strong>" + form.topic + "</strong>");
+  };
+
+  return (
+    <div style={{ animation: "fadeUp 0.35s ease" }}>
+      <div style={{ background: G.surface, border: "1px solid " + G.border, borderRadius: G.radius, padding: "18px 22px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.12em", color: G.accent, marginBottom: 4 }}>Contest Thread Ready</div>
+          <div style={{ fontWeight: 800, fontSize: "1rem" }}>{form.topic}</div>
+          <div style={{ fontSize: "0.72rem", color: G.muted, marginTop: 2 }}>3 hooks + full thread + craft breakdown</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={copyAll} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid " + G.border, background: "transparent", color: G.muted, fontFamily: "Plus Jakarta Sans, sans-serif", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer" }}>Copy All</button>
+          <button onClick={exportPDF} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid " + G.border, background: "transparent", color: G.muted, fontFamily: "Plus Jakarta Sans, sans-serif", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer" }}>Export PDF</button>
+          <button onClick={onReset} style={{ padding: "8px 14px", borderRadius: 9, background: G.accent, border: "none", color: "#000", fontFamily: "Plus Jakarta Sans, sans-serif", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer" }}>New Thread</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {CONTEST_SECTIONS.filter(s => result[s.key]).map(sec => (
+          <ContestSection key={sec.key} section={sec} content={result[sec.key]} isActive={active === sec.key} onClick={() => toggle(sec.key)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── ROOT ──────────────────────────────────────────────────────────────────────
 
 export default function ContentEngine() {
@@ -419,10 +514,14 @@ export default function ContentEngine() {
   const [packForm, setPackForm] = useState({ theme: "thought", topic: "", angle: "", context: "", brand: "" });
   const setP = k => v => setPackForm(p => ({ ...p, [k]: v }));
 
+  const [contestForm, setContestForm] = useState({ topic: "", angle: "", context: "" });
+  const setC = k => v => setContestForm(p => ({ ...p, [k]: v }));
+
   const reset = () => {
     setStep("form"); setResult(null); setError("");
     setQuickForm({ type: "thread", theme: "thought", topic: "", angle: "", context: "", brand: "" });
     setPackForm({ theme: "thought", topic: "", angle: "", context: "", brand: "" });
+    setContestForm({ topic: "", angle: "", context: "" });
   };
 
   const submitQuick = async () => {
@@ -441,6 +540,17 @@ export default function ContentEngine() {
       const raw = await askGroq([{ role: "user", content: buildPackPrompt(packForm) }], 4000);
       const parsed = parsePackContent(raw);
       if (!parsed) throw new Error("AI did not return a valid content pack. Please try again.");
+      setResult(parsed); setStep("output");
+    } catch (err) { setError(`Generation failed: ${err.message}`); setStep("form"); }
+  };
+
+  const submitContest = async () => {
+    if (!contestForm.topic.trim()) { setError("Topic is required."); return; }
+    setError(""); setStep("loading");
+    try {
+      const raw = await askGroq([{ role: "user", content: buildContestPrompt(contestForm) }], 4000);
+      const parsed = parseContestContent(raw);
+      if (!parsed) throw new Error("AI did not return a valid thread. Please try again.");
       setResult(parsed); setStep("output");
     } catch (err) { setError(`Generation failed: ${err.message}`); setStep("form"); }
   };
@@ -464,6 +574,8 @@ export default function ContentEngine() {
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 24 }}><Spinner /></div>
         {(mode === "pack"
           ? ["Building your content pack...", "Writing the thread...", "Crafting authority takes...", "Generating expansion ideas..."]
+          : mode === "contest"
+          ? ["Setting the scene...", "Building the twist...", "Writing the thread...", "Crafting the breakdown..."]
           : (quickLoadingLines[quickForm.type] || ["Writing..."])
         ).map((t, i) => (
           <div key={i} style={{ fontSize: "0.73rem", color: G.muted, fontFamily: "Plus Jakarta Sans, sans-serif", marginTop: 10, animation: `fadeUp 0.4s ease ${i * 0.18}s both` }}>{t}</div>
@@ -480,12 +592,14 @@ export default function ContentEngine() {
           <div style={{ fontWeight: 800, fontSize: "1.3rem", letterSpacing: "-0.025em" }}>Content<span style={{ color: G.accent }}>Engine</span></div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.68rem", color: G.muted }}>
             <div style={{ width: 6, height: 6, borderRadius: "50%", background: G.accent, animation: "pulse 2s infinite" }} />
-            {mode === "quick" ? "Quick Content" : "Content Pack"}
+            {mode === "quick" ? "Quick Content" : mode === "pack" ? "Content Pack" : "Thread Contest"}
           </div>
         </div>
         {mode === "quick"
           ? <QuickOutput content={result} form={quickForm} onVariation={generateVariation} onReset={reset} />
-          : <PackOutput pack={result} form={packForm} onReset={reset} />
+          : mode === "pack"
+          ? <PackOutput pack={result} form={packForm} onReset={reset} />
+          : <ContestOutput result={result} form={contestForm} onReset={reset} />
         }
       </div>
     </div>
@@ -504,7 +618,7 @@ export default function ContentEngine() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
           <ModeToggle mode={mode} onChange={m => { setMode(m); setError(""); setStep("form"); setResult(null); }} />
           <div style={{ fontSize: "0.72rem", color: G.muted }}>
-            {mode === "quick" ? "One piece of content with up to 4 variations" : "Full pack: thread + posts + authority takes + expansion ideas"}
+            {mode === "quick" ? "One piece of content with up to 4 variations" : mode === "pack" ? "Full pack: thread + posts + authority takes + expansion ideas" : "Story-driven thread built to win contests"}
           </div>
         </div>
 
@@ -556,7 +670,7 @@ export default function ContentEngine() {
               <TArea label="Additional Context (optional)" value={quickForm.context} onChange={setQ("context")} rows={3} placeholder="Personal stories, data points, examples, or any raw notes you want included." hint="More real context = more authentic output." />
             </div>
           </>
-        ) : (
+        ) : mode === "pack" ? (
           <>
             <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: G.radius, padding: "24px", marginBottom: 14, animation: "fadeUp 0.45s ease 0.05s both" }}>
               <div style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: G.accent, marginBottom: 16, fontWeight: 700 }}>Theme</div>
@@ -586,17 +700,34 @@ export default function ContentEngine() {
                 hint="The more context you give, the more specific and valuable the output." />
             </div>
           </>
+        ) : (
+          <div style={{ background: G.surface, border: `1px solid ${G.border}`, borderRadius: G.radius, padding: "24px", animation: "fadeUp 0.45s ease 0.05s both" }}>
+            <div style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: G.accent, marginBottom: 20, fontWeight: 700 }}>Contest Brief</div>
+            <div style={{ background: `${G.accent}0d`, border: `1px solid ${G.accent}25`, borderRadius: 10, padding: "10px 14px", marginBottom: 18, fontSize: "0.75rem", color: G.muted, lineHeight: 1.6 }}>
+              <span style={{ color: G.accent }}>◈</span> Story-driven thread optimized to win contests. You get 3 alternate hooks, the full thread, and a craft breakdown.
+            </div>
+            <TInput label="Topic *" value={contestForm.topic} onChange={setC("topic")}
+              placeholder="e.g. The day I realized most startup advice is written by people who failed"
+              hint="The more specific and personal the topic, the better the story." />
+            <TInput label="Specific Angle (optional)" value={contestForm.angle} onChange={setC("angle")}
+              placeholder="e.g. Focus on the moment of realization, not the lesson itself" />
+            <TArea label="Context / Story Material (optional)" value={contestForm.context} onChange={setC("context")} rows={4}
+              placeholder="Any real story, experience, data point, or insight you want woven in. Real details make threads win."
+              hint="Paste raw notes, a rough story, research, anything." />
+          </div>
         )}
+
+
 
         {error && <div style={{ background: "#ff4d4d10", border: "1px solid #ff4d4d33", borderRadius: 10, padding: "12px 16px", margin: "14px 0", fontSize: "0.82rem", color: "#ff8888" }}>{error}</div>}
 
-        <button onClick={mode === "quick" ? submitQuick : submitPack}
+        <button onClick={mode === "quick" ? submitQuick : mode === "pack" ? submitPack : submitContest}
           style={{ width: "100%", marginTop: 14, padding: "14px", borderRadius: G.radius, background: G.accent, border: "none", color: "#000", fontFamily: "Plus Jakarta Sans, sans-serif", fontWeight: 800, fontSize: "0.92rem", cursor: "pointer", transition: "opacity 0.2s", animation: "fadeUp 0.5s ease 0.2s both" }}
           onMouseEnter={e => e.currentTarget.style.opacity = "0.85"} onMouseLeave={e => e.currentTarget.style.opacity = "1"}>
-          {mode === "quick" ? "Generate Content" : "Generate Content Pack"}
+          {mode === "quick" ? "Generate Content" : mode === "pack" ? "Generate Content Pack" : "Write Contest Thread"}
         </button>
         <p style={{ textAlign: "center", fontSize: "0.68rem", color: G.muted, marginTop: 10 }}>
-          {mode === "quick" ? "One piece of content with up to 4 variations - 10-15 seconds" : "Thread + 3 posts + 2 authority takes + expansion ideas - 20-30 seconds"}
+          {mode === "quick" ? "One piece of content with up to 4 variations - 10-15 seconds" : mode === "pack" ? "Thread + 3 posts + 2 authority takes + expansion ideas - 20-30 seconds" : "3 hooks + full thread + craft breakdown - 15-25 seconds"}
         </p>
       </div>
     </div>
