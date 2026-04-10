@@ -124,22 +124,72 @@ const VOICE_BY_THEME = {
 
 // ── PROMPTS ───────────────────────────────────────────────────────────────────
 
-const BASE_RULES = `Do NOT be generic. Do NOT write like typical AI.
-Write with clarity, value, authority, personality, and insight.
-Strong opinions when the topic calls for it.
-Never use em dashes. Commas, colons, or new sentences only.
-No hashtags. No fluff openers. No "In today's world" or "Have you ever".
-Beginner-friendly but never dumbed down.
-Occasional humor or relatability where it fits naturally.
+const BASE_RULES = `You are a world-class writer and brand strategist with 20+ years of experience. Every output must be intentional, sharp, and impactful. Mediocrity is unacceptable.
 
-CLIFFHANGER RULES - APPLY TO EVERYTHING:
-- Create forward momentum. Every line should pull the reader to the next.
-- End paragraphs and tweets on tension, not resolution. Deliver the payoff at the start of the next unit.
-- Open loops early, close them late. Raise a contradiction or question, make them read to find the answer.
-- For threads: each tweet must make the next one feel necessary. Never fully close a thought mid-thread.
-- For articles and newsletters: subheadings should tease what is coming, not summarize what just happened.
-- Never give away the point in the first sentence. Make them earn the insight.
-- Pattern: setup tension, delay resolution, reward with the insight. Then open the next loop immediately.`;
+INTERNAL EDITORIAL PROCESS (run before every output):
+1. Draft with strong hook, clean structure, clear value.
+2. Layer in: relatability, tension, curiosity, emotional triggers. No forced virality. No overhype.
+3. Critic check: internally score hook strength, originality, emotional impact, clarity, engagement. If anything scores below 7, rewrite it before outputting.
+4. Optimize: sharpen hook, cut every word that does not earn its place, improve rhythm and flow.
+5. Final standard: ask internally "Would an experienced writer stake their reputation on this?" If no, improve it.
+
+WRITING MODES (adapt to selected style):
+- Storytelling: vivid, immersive, emotionally layered, relatable
+- Technical: structured, insight-heavy, zero fluff
+- Copywriting: persuasive, punchy, conversion-focused
+- Analytical: data-driven, sharp observations, strategic
+- Contrarian: challenges common beliefs intelligently, backs it up
+- Motivational: inspiring but grounded, never cliche
+- Opinionated: strong POV, confident, defends its position
+- Narrative: story-led, arc from tension to resolution
+- Satirical: wit and irony with a sharp point underneath
+- Minimalist: maximum impact with minimum words
+- Educational: teaches clearly, builds understanding progressively
+
+VOICE RULES:
+- Sound like a real human with authority and decades of experience.
+- No cliches. No generic phrasing. No corporate speak.
+- Never use em dashes. Commas, colons, or new sentences only.
+- No hashtags. No fluff openers like "In today's world" or "Have you ever".
+- The first line must trigger curiosity, tension, or recognition. If the hook is weak, rewrite it.
+
+CLIFFHANGER RULES:
+- Every line must pull the reader to the next. Never resolve tension too early.
+- Open loops early, close them late. Raise a question, delay the answer.
+- Never give away the point in the first line. Make the reader earn the insight.
+- For threads: each tweet must make the next one feel necessary.
+- Pattern: setup tension, delay resolution, reward with insight, then open the next loop.`
+
+const WRITING_STYLES = [
+  { id: "Storytelling", icon: "◎" }, { id: "Contrarian",  icon: "◐" },
+  { id: "Opinionated",  icon: "▲" }, { id: "Analytical",  icon: "◆" },
+  { id: "Copywriting",  icon: "◈" }, { id: "Educational", icon: "▣" },
+  { id: "Narrative",    icon: "◉" }, { id: "Motivational",icon: "▶" },
+  { id: "Technical",    icon: "⊕" }, { id: "Satirical",   icon: "⬡" },
+  { id: "Minimalist",   icon: "◌" },
+];
+
+function StylePicker({ selected, onChange }) {
+  const toggle = id => onChange(selected.includes(id) ? selected.filter(s => s !== id) : [...selected, id]);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: "0.68rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: G.muted, marginBottom: 8 }}>Writing Style</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {WRITING_STYLES.map(s => (
+          <button key={s.id} onClick={() => toggle(s.id)} style={{
+            padding: "5px 12px", borderRadius: 20,
+            border: `1px solid ${selected.includes(s.id) ? G.accent : G.border}`,
+            background: selected.includes(s.id) ? `${G.accent}18` : "transparent",
+            color: selected.includes(s.id) ? G.accent : G.muted,
+            fontFamily: "Plus Jakarta Sans, sans-serif", fontSize: "0.72rem", fontWeight: 600,
+            cursor: "pointer", transition: "all 0.15s",
+          }}>{s.icon} {s.id}</button>
+        ))}
+      </div>
+      {selected.length === 0 && <div style={{ fontSize: "0.64rem", color: G.muted, marginTop: 4 }}>None selected - AI picks the best fit for your topic</div>}
+    </div>
+  );
+}
 
 function buildQuickPrompt(form, variationNote = "") {
   const typeInstructions = {
@@ -169,6 +219,9 @@ function buildQuickPrompt(form, variationNote = "") {
 ${BASE_RULES}
 
 VOICE DIRECTION: ${VOICE_BY_THEME[form.theme]}
+WRITING STYLE: ${form.styles && form.styles.length > 0 ? form.styles.join(", ") : "Best fit for topic"}
+TARGET AUDIENCE: ${form.audience || "Web3 founders, growth operators, startup builders"}
+GOAL: ${form.goal || "Engagement and authority"}
 TOPIC: ${form.topic}
 ${form.angle ? `SPECIFIC ANGLE: ${form.angle}` : ""}
 ${form.context ? `ADDITIONAL CONTEXT: ${form.context}` : ""}
@@ -185,6 +238,9 @@ function buildPackPrompt(form) {
 ${BASE_RULES}
 
 VOICE DIRECTION: ${VOICE_BY_THEME[form.theme]}
+WRITING STYLE: ${form.styles && form.styles.length > 0 ? form.styles.join(", ") : "Best fit for topic"}
+TARGET AUDIENCE: ${form.audience || "Web3 founders, growth operators, startup builders"}
+GOAL: ${form.goal || "Engagement and authority"}
 TOPIC: ${form.topic}
 ${form.angle ? `SPECIFIC ANGLE: ${form.angle}` : ""}
 ${form.context ? `RESEARCH INPUT / CONTEXT: ${form.context}` : ""}
@@ -517,20 +573,20 @@ export default function ContentEngine() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
 
-  const [quickForm, setQuickForm] = useState({ type: "thread", theme: "thought", topic: "", angle: "", context: "", brand: "" });
+  const [quickForm, setQuickForm] = useState({ type: "thread", theme: "thought", topic: "", angle: "", context: "", brand: "", styles: [], audience: "", goal: "" });
   const setQ = k => v => setQuickForm(p => ({ ...p, [k]: v }));
 
-  const [packForm, setPackForm] = useState({ theme: "thought", topic: "", angle: "", context: "", brand: "" });
+  const [packForm, setPackForm] = useState({ theme: "thought", topic: "", angle: "", context: "", brand: "", styles: [], audience: "", goal: "" });
   const setP = k => v => setPackForm(p => ({ ...p, [k]: v }));
 
-  const [contestForm, setContestForm] = useState({ topic: "", angle: "", context: "" });
+  const [contestForm, setContestForm] = useState({ topic: "", angle: "", context: "", styles: [], audience: "" });
   const setC = k => v => setContestForm(p => ({ ...p, [k]: v }));
 
   const reset = () => {
     setStep("form"); setResult(null); setError("");
-    setQuickForm({ type: "thread", theme: "thought", topic: "", angle: "", context: "", brand: "" });
-    setPackForm({ theme: "thought", topic: "", angle: "", context: "", brand: "" });
-    setContestForm({ topic: "", angle: "", context: "" });
+    setQuickForm({ type: "thread", theme: "thought", topic: "", angle: "", context: "", brand: "", styles: [], audience: "", goal: "" });
+    setPackForm({ theme: "thought", topic: "", angle: "", context: "", brand: "", styles: [], audience: "", goal: "" });
+    setContestForm({ topic: "", angle: "", context: "", styles: [], audience: "" });
   };
 
   const submitQuick = async () => {
@@ -675,6 +731,11 @@ export default function ContentEngine() {
               <div style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: G.accent, marginBottom: 20, fontWeight: 700 }}>Content Brief</div>
               <TInput label="Topic *" value={quickForm.topic} onChange={setQ("topic")} placeholder="e.g. Why most startups confuse activity with progress" hint="Be specific. The sharper the topic, the sharper the content." />
               <TInput label="Specific Angle (optional)" value={quickForm.angle} onChange={setQ("angle")} placeholder="e.g. Focus on founder psychology, not tactics" />
+              <StylePicker selected={quickForm.styles} onChange={v => setQ("styles")(v)} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+                <TInput label="Target Audience (optional)" value={quickForm.audience} onChange={setQ("audience")} placeholder="e.g. Web3 founders, SaaS builders" />
+                <TInput label="Goal (optional)" value={quickForm.goal} onChange={setQ("goal")} placeholder="e.g. Engagement, authority, leads" />
+              </div>
               {quickForm.theme === "client" && <TInput label="Brand / Project Context" value={quickForm.brand} onChange={setQ("brand")} placeholder="e.g. DeFi lending protocol, 3 months post-launch, targeting retail" />}
               <TArea label="Additional Context (optional)" value={quickForm.context} onChange={setQ("context")} rows={3} placeholder="Personal stories, data points, examples, or any raw notes you want included." hint="More real context = more authentic output." />
             </div>
@@ -703,8 +764,13 @@ export default function ContentEngine() {
               <div style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: G.accent, marginBottom: 20, fontWeight: 700 }}>Content Brief</div>
               <TInput label="Topic *" value={packForm.topic} onChange={setP("topic")} placeholder="e.g. Why Web3 projects fail at community before they fail at product" hint="Be specific. The sharper the topic, the sharper the pack." />
               <TInput label="Specific Angle (optional)" value={packForm.angle} onChange={setP("angle")} placeholder="e.g. The psychological patterns behind community failure" />
+              <StylePicker selected={packForm.styles} onChange={v => setP("styles")(v)} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+                <TInput label="Target Audience (optional)" value={packForm.audience} onChange={setP("audience")} placeholder="e.g. Web3 founders, SaaS builders" />
+                <TInput label="Goal (optional)" value={packForm.goal} onChange={setP("goal")} placeholder="e.g. Engagement, authority, leads" />
+              </div>
               {packForm.theme === "client" && <TInput label="Brand / Project Context" value={packForm.brand} onChange={setP("brand")} placeholder="e.g. DeFi lending protocol, 3 months post-launch, targeting retail" />}
-              <TArea label="Research Input / Context" value={packForm.context} onChange={setP("context")} rows={5}
+              <TArea label="Research Input / Context" value={packForm.context} onChange={setP("context")} rows={4}
                 placeholder="Paste anything: research insights, growth strategy notes, tweets, article excerpts, raw ideas, data points. This is your main fuel for the content pack."
                 hint="The more context you give, the more specific and valuable the output." />
             </div>
